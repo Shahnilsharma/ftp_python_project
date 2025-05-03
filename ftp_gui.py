@@ -58,6 +58,9 @@ class MainWindow(QMainWindow):
         self.directory = os.getcwd()
         self.ftp_thread = None
 
+        # Known devices dictionary: {ip: {"name": str, "enabled": bool}}
+        self.known_devices = {}
+
         # Device discovery
         self.device_discovery = DeviceDiscovery()
         self.device_discovery.device_found.connect(self.on_device_found)
@@ -76,6 +79,8 @@ class MainWindow(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
+        from PyQt5.QtWidgets import QListWidgetItem, QAbstractItemView, QGroupBox, QGridLayout, QCheckBox
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
@@ -122,12 +127,89 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Connected Clients:"))
         layout.addWidget(self.client_list)
 
+        # Permanent client device list with multi-selection
+        self.permanent_client_list = QListWidget()
+        self.permanent_client_list.setSelectionMode(QAbstractItemView.MultiSelection)
+        layout.addWidget(QLabel("Permanent Client Devices:"))
+        layout.addWidget(self.permanent_client_list)
+
+        # Button to browse and select folder to share with selected devices
+        folder_layout = QHBoxLayout()
+        self.folder_label = QLabel("No folder selected")
+        self.browse_folder_btn = QPushButton("Browse Folder to Share")
+        self.browse_folder_btn.clicked.connect(self.browse_folder_to_share)
+        folder_layout.addWidget(self.folder_label)
+        folder_layout.addWidget(self.browse_folder_btn)
+        layout.addLayout(folder_layout)
+
         # Device discovery list
         self.device_list = QListWidget()
         layout.addWidget(QLabel("Discovered Devices:"))
         layout.addWidget(self.device_list)
 
+        # Device permission management button
+        self.permission_btn = QPushButton("Manage Device Permissions")
+        self.permission_btn.clicked.connect(self.open_permission_dialog)
+        layout.addWidget(self.permission_btn)
+
         central_widget.setLayout(layout)
+
+    def open_permission_dialog(self):
+        # Implement a simple device permission management dialog
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QListWidget, QListWidgetItem, QPushButton, QHBoxLayout
+
+        class DevicePermissionDialog(QDialog):
+            def __init__(self, parent, known_devices):
+                super().__init__(parent)
+                self.setWindowTitle("Device Permission Management")
+                self.resize(400, 300)
+                self.known_devices = known_devices
+                self.layout = QVBoxLayout()
+                self.list_widget = QListWidget()
+                self.layout.addWidget(self.list_widget)
+
+                # Populate list with devices and checkboxes
+                for ip, info in self.known_devices.items():
+                    item = QListWidgetItem(f"{info['name']} - {ip}")
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Checked if info.get("enabled", True) else Qt.Unchecked)
+                    self.list_widget.addItem(item)
+
+                # Buttons
+                btn_layout = QHBoxLayout()
+                self.save_btn = QPushButton("Save")
+                self.cancel_btn = QPushButton("Cancel")
+                btn_layout.addWidget(self.save_btn)
+                btn_layout.addWidget(self.cancel_btn)
+                self.layout.addLayout(btn_layout)
+
+                self.setLayout(self.layout)
+
+                self.save_btn.clicked.connect(self.accept)
+                self.cancel_btn.clicked.connect(self.reject)
+
+            def get_permissions(self):
+                permissions = {}
+                for i in range(self.list_widget.count()):
+                    item = self.list_widget.item(i)
+                    ip = list(self.known_devices.keys())[i]
+                    enabled = item.checkState() == Qt.Checked
+                    permissions[ip] = enabled
+                return permissions
+
+        dialog = DevicePermissionDialog(self, self.known_devices)
+        if dialog.exec_() == QDialog.Accepted:
+            permissions = dialog.get_permissions()
+            # Update known_devices enabled status
+            for ip, enabled in permissions.items():
+                self.known_devices[ip]["enabled"] = enabled
+            # Update allowed devices in FTP handler
+            self.update_allowed_devices()
+
+    def update_allowed_devices(self):
+        # Update the allowed_devices set in PermissionFTPHandler based on enabled devices
+        allowed = {ip for ip, info in self.known_devices.items() if info.get("enabled", False)}
+        ftp_core.PermissionFTPHandler.allowed_devices = allowed
 
     def on_device_clicked(self, item):
         # Extract device name and IP from item text
@@ -173,6 +255,57 @@ class MainWindow(QMainWindow):
             self.directory = dir_path
             self.dir_label.setText(f"Shared Directory: {self.directory}")
 
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Secured Wireless FTP Server")
+        self.resize(600, 400)
+
+        self.directory = os.getcwd()
+        self.ftp_thread = None
+
+        # Known devices dictionary: {ip: {"name": str, "enabled": bool}}
+        self.known_devices = {}
+
+        # Mapping device IP to list of allowed folders
+        self.device_allowed_folders = {}
+
+        # Device discovery
+        self.device_discovery = DeviceDiscovery()
+        self.device_discovery.device_found.connect(self.on_device_found)
+        self.device_discovery.device_removed.connect(self.on_device_removed)
+
+        # Timer to check permission queue
+        self.permission_timer = QTimer()
+        self.permission_timer.timeout.connect(self.check_permission_queue)
+        self.permission_timer.start(500)  # check every 500 ms
+
+        # Timer to check client event queue
+        self.client_timer = QTimer()
+        self.client_timer.timeout.connect(self.check_client_event_queue)
+        self.client_timer.start(500)  # check every 500 ms
+
+        self.init_ui()
+
+    def browse_folder_to_share(self):
+        from PyQt5.QtWidgets import QMessageBox
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to Share")
+        if folder_path:
+            self.folder_label.setText(folder_path)
+            selected_items = self.permanent_client_list.selectedItems()
+            if not selected_items:
+                QMessageBox.warning(self, "No Devices Selected", "Please select one or more devices to share the folder with.")
+                return
+            selected_ips = [item.text().split(" - ")[-1] for item in selected_items]
+            # Update device_allowed_folders mapping
+            for ip in selected_ips:
+                if ip not in self.device_allowed_folders:
+                    self.device_allowed_folders[ip] = []
+                if folder_path not in self.device_allowed_folders[ip]:
+                    self.device_allowed_folders[ip].append(folder_path)
+            # Update PermissionFTPHandler.device_permissions accordingly
+            ftp_core.PermissionFTPHandler.device_permissions = self.device_allowed_folders
+            print(f"Sharing folder '{folder_path}' with devices: {selected_ips}")
+
     def start_server(self):
         if self.ftp_thread and self.ftp_thread.isRunning():
             self.statusBar().showMessage("Server already running")
@@ -212,9 +345,16 @@ class MainWindow(QMainWindow):
         self.client_list.addItem("No clients connected")
 
     def on_device_found(self, name, address):
+        # Add device to known_devices if not present
+        if address not in self.known_devices:
+            self.known_devices[address] = {"name": name, "enabled": True}
+            # No longer update allowed devices since connection is unrestricted
+            # self.update_allowed_devices()
+        # Update device list UI
         self.device_list.addItem(f"{name} - {address}")
 
     def on_device_removed(self, name):
+        # Optionally update device list UI on device removal
         for i in range(self.device_list.count()):
             if self.device_list.item(i).text().startswith(name):
                 self.device_list.takeItem(i)
@@ -226,12 +366,26 @@ class MainWindow(QMainWindow):
 
     def check_permission_queue(self):
         try:
-            operation, filename = ftp_core.permission_queue.get_nowait()
+            # Updated to handle device IP in permission requests
+            data = ftp_core.permission_queue.get_nowait()
         except:
             return
+        if len(data) == 3:
+            operation, device_ip, filename = data
+        else:
+            # fallback for old format
+            operation, filename = data
+            device_ip = None
+        # Here you can implement a custom dialog or logic to check device-specific permissions
+        # For now, we use the existing PermissionDialog for simplicity
         dialog = PermissionDialog(filename, operation, self)
         result = dialog.exec_()
         allowed = dialog.result
+        # Update the device permissions mapping if allowed
+        if allowed and device_ip:
+            perms = ftp_core.PermissionFTPHandler.device_permissions.get(device_ip, set())
+            perms.add(filename)
+            ftp_core.PermissionFTPHandler.device_permissions[device_ip] = perms
         ftp_core.permission_queue.put(allowed)
 
     def check_client_event_queue(self):
@@ -241,6 +395,9 @@ class MainWindow(QMainWindow):
             return
         if event == "connect":
             self.add_client(ip)
+            # Add to permanent client device list if not present
+            if not any(self.permanent_client_list.item(i).text().endswith(ip) for i in range(self.permanent_client_list.count())):
+                self.permanent_client_list.addItem(f"Device - {ip}")
         elif event == "disconnect":
             self.remove_client(ip)
 
