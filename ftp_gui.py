@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,
     QFileDialog, QLabel, QListWidget, QHBoxLayout, QStatusBar, QLineEdit, QFormLayout
 )
-from PyQt5.QtCore import QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
 import threading
 import ftp_core
 from device_discovery import DeviceDiscovery
