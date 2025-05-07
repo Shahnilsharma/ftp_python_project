@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton,
     QFileDialog, QLabel, QListWidget, QHBoxLayout, QStatusBar, QLineEdit, QFormLayout
@@ -419,6 +420,30 @@ class MainWindow(QMainWindow):
             self.client_list.addItem("No clients connected")
 
 def main():
+    ascii_art = r"""
+   
+░▒▓████████▓▒░▒▓████████▓▒░▒▓███████▓▒░                      ░▒▓███████▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░         ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░                    ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░         ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░                    ░▒▓█▓▒░      ░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓██████▓▒░    ░▒▓█▓▒░   ░▒▓███████▓▒░                      ░▒▓██████▓▒░░▒▓████████▓▒░ 
+░▒▓█▓▒░         ░▒▓█▓▒░   ░▒▓█▓▒░                                  ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░         ░▒▓█▓▒░   ░▒▓█▓▒░             ░▒▓██▓▒░             ░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░         ░▒▓█▓▒░   ░▒▓█▓▒░             ░▒▓██▓▒░      ░▒▓███████▓▒░░▒▓█▓▒░░▒▓█▓▒░ 
+                                                                                        
+
+
+    Secured Wireless FTP Server
+    Author @Shahnil Sharma
+    Version: 1.0.0
+"""
+    print(ascii_art)
+    print("Loading, please wait......", end="", flush=True)
+    for _ in range(6):
+        for ch in ".......":
+            print(ch, end="", flush=True)
+            time.sleep(0.25)
+        print("\b\b\b\b\b     \b\b\b\b\b", end="", flush=True)  # erase animation
+    print("\n")
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
